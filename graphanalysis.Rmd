@@ -1,0 +1,526 @@
+
+```{r}
+
+library(igraph)
+library(tidygraph)
+library(tidyverse)
+library(cowplot)
+
+load(file ='HHSizes.Rdata')
+
+
+degree_dist_p = HH_SizeHist_All$Count/sum(HH_SizeHist_All$Count)
+
+sum(HH_SizeHist_All$Count)
+
+HH_SizeHist_All %>% 
+  ggplot(aes(x=Size,y=Count/sum(Count)))+
+  geom_point()+
+  scale_x_log10()+
+  scale_y_log10()+
+  ylab('P(S)')+
+  xlab('Household Size, S')+
+  theme_minimal_grid()->p
+
+ggsave(p,filename='HouseholdSizeDist.png',width=7,height=5)
+  
+```
+
+```{r}
+
+HH_SizeHist_All %>% 
+  mutate(NumberInternalLinks = Size-1) %>% 
+  mutate(DegreeDistribution = Size*Count) %>% 
+  summarise(sum(Size*DegreeDistribution/sum(DegreeDistribution)))->meanDegree
+
+
+
+HH_SizeHist_All %>% 
+  mutate(NumberInternalLinks = Size-1) %>% 
+  mutate(DegreeDistribution = Size*Count) %>% 
+  ggplot(aes(x=Size,y=DegreeDistribution))+
+  geom_point()+
+  scale_x_log10()+
+  scale_y_log10()+
+   ylab('P(k)')+
+  xlab('Number of contacts, k')+
+  theme_minimal()
+
+
+```
+
+
+
+
+```{r}
+library('moments')
+sample(30, 1000, replace = TRUE, degree_dist_p)->oneK
+sample(30, 10000, replace = TRUE, degree_dist_p)->tenK
+sample(30, 100000, replace = TRUE, degree_dist_p)->hundredK
+sample(30, 1000000, replace = TRUE, degree_dist_p)->million
+
+as.tibble(testseq)%>% 
+  group_by(value) %>% 
+  summarise(N=n()) # that seems to be working then. 
+
+HH_SizeHist_All %>% 
+  ggplot()+
+  geom_col(data=HH_SizeHist_All, aes(x=Size,y=Count/sum(Count)))
+
+as.tibble(testseq)%>% 
+  ggplot(aes(x=testseq))+
+  geom_histogram(bins=max(testseq))
+
+
+
+
+```
+
+
+```{r}
+
+
+
+N=100000
+degseq=1
+while(sum(degseq)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p)->degseq
+
+nl=sum(degseq)
+g<-sample_degseq(degseq)
+removenumber = seq(0,nl/2,1000)
+
+meanmaxClusters <- function(g,i){
+  sub_g<-delete_edges(g,sample(E(g),i)) # remove i edges
+  compssize=components(sub_g)$csize
+  MeanDegSq = mean(degree(sub_g)^2)
+  Max=max(compssize)
+  Mean=mean(compssize)
+  SD = sd(compssize)
+  Mean_woMax=mean(compssize[!compssize==max(compssize)])
+  return(data.frame(Max,Mean_woMax,SD,Mean,MeanDegSq))
+} 
+
+
+data.frame(removenumber)%>% 
+  mutate(d=map(removenumber,~meanmaxClusters(g,.))) %>% 
+  unnest(d)->tmp
+  
+tmp %>% summarise(pc=removenumber[which.max(Mean_woMax)])
+
+tmp %>% 
+  pivot_longer(-removenumber) %>% 
+  ggplot(aes(x=removenumber/N,y=value))+
+  geom_line()+
+  facet_wrap(~name,scales = 'free_y')
+
+
+removenumber2 = seq(0,nl,1000)
+
+g_bubble2=sample_degseq(degseq+rev(degseq))
+
+data.frame(removenumber2)%>% 
+  mutate(d=map(removenumber2,~meanmaxClusters(g_bubble2,.))) %>% 
+  unnest(d)->tmp_bubble2
+
+tmp_bubble2 %>% 
+  pivot_longer(-removenumber2) %>% 
+  ggplot(aes(x=removenumber2/N,y=value))+
+  geom_line()+
+  facet_wrap(~name,scales = 'free_y')
+
+
+
+```
+
+
+```{r}
+N=100000
+
+find_threshold<-function(degree_dist_p,N){
+  
+  # no bubbles
+  degseq=1
+  while(sum(degseq)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p)->degseq # generate sequence
+  
+  performPercolationAnalysis(degseq) %>% 
+     mutate(Type='No-bubbles')->tmp
+  
+  # g<-sample_degseq(degseq) #make network with sequence
+  # nl=gsize(g) # number of links
+  # removenumber = seq(0,nl,nl/100) # generate vector of number of links to remove. 
+  # #print(removenumber) # these are the numbers to remove. 
+  # data.frame(removenumber)%>% 
+  #   mutate(d=map(removenumber,~meanmaxClusters(g,.))) %>% 
+  #   unnest(d) %>% 
+  #   mutate(LinksPerHousehold = (nl-removenumber)/nl) %>% 
+  #   mutate(Type='No-bubbles')->tmp
+  
+# join up bubbles of size 2.
+  
+  performPercolationAnalysis(degseq+rev(degseq)) %>% 
+        mutate(Type='2-bubbles')->tmp2
+  
+  # g2 <- sample_degseq(degseq+rev(degseq))
+  # nl2= gsize(g2)
+  # removenumber = seq(0,nl2,nl2/100) # generate vector of number of links to remove. 
+  # 
+  # data.frame(removenumber)%>% 
+  #   mutate(d=map(removenumber,~meanmaxClusters(g2,.))) %>% 
+  #   unnest(d) %>% 
+  #   mutate(LinksPerHousehold = (nl2-removenumber)/nl2) %>% 
+  #   mutate(Type='2-bubbles')->tmp2
+  
+# join up bubbles of size 3  
+  degseq2=1
+  while(sum(degseq2)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p)->degseq2 # generate sequence
+  
+  performPercolationAnalysis(degseq+rev(degseq)+degseq2) %>% 
+    mutate(Type='3-bubbles')->tmp3
+    
+  
+  # g3 <- sample_degseq(degseq+rev(degseq)+degseq2)
+  # nl3= gsize(g3)
+  # removenumber = seq(0,nl3,nl3/100) # generate vector of number of links to remove. 
+  # 
+  # data.frame(removenumber)%>% 
+  #   mutate(d=map(removenumber,~meanmaxClusters(g3,.))) %>% 
+  #   unnest(d) %>% 
+  #   mutate(LinksPerHousehold = (nl3-removenumber)/nl3) %>% 
+  #   mutate(Type='3-bubbles')->tmp3
+  
+# 1-add-1 (2 become 1)
+   
+  degree_dist_p_mod=degree_dist_p # copy the distribution
+  degree_dist_p_mod[2]=degree_dist_p_mod[2]+degree_dist_p_mod[1]/2 # move all hh of size 1 to hh of size 2
+  degree_dist_p_mod[1]=0 # remove all housholds of size 1
+  degree_dist_p_mod=degree_dist_p_mod/sum(degree_dist_p_mod)  # 
+  
+  degseq3=1
+  while(sum(degseq3)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p_mod)->degseq3 # generate sequence 
+  
+  performPercolationAnalysis(degseq3) %>% 
+    mutate(Type = '1+1')->tmp4
+  
+  # g4 <- sample_degseq(degseq3)
+  # nl4 = gsize(g4)
+  # removenumber = seq(0,nl4,nl4/100) # generate vector of number of links to remove. 
+  # 
+  # data.frame(removenumber)%>% 
+  #   mutate(d=map(removenumber,~meanmaxClusters(g4,.))) %>% 
+  #   unnest(d) %>% 
+  #   mutate(LinksPerHousehold = (nl4-removenumber)/nl4) %>% 
+  #   mutate(Type='2-become-1')->tmp4
+
+  
+# 1 joins another
+  degree_dist_p_noones=degree_dist_p # copy the distribution
+  degree_dist_p_noones[1]=0 # remove all housholds of size 1
+  degree_dist_p_noones=degree_dist_p_noones/sum(degree_dist_p_noones)  #renormalise distribution
+  degseq_noones=1
+  while(sum(degseq_noones)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p_noones)->degseq_noones # generate sequence
+
+  
+  performPercolationAnalysis(degseq_noones) %>% 
+    mutate(Type = '1+n')->tmp5
+
+  # g5 <- sample_degseq(degseq_noones)
+  # 
+  # nl5= gsize(g5)
+  # removenumber = seq(0,nl5,nl5/100) # generate vector of number of links to remove. 
+  # 
+  # data.frame(removenumber)%>% 
+  #   mutate(d=map(removenumber,~meanmaxClusters(g5,.))) %>% 
+  #   unnest(d) %>% 
+  #   mutate(LinksPerHousehold = (nl5-removenumber)/nl5) %>% 
+  #   mutate(Type='1-joins-another')->tmp5
+  
+
+  # 1+2s join another
+  degree_dist_p_notwos=degree_dist_p # copy the distribution
+  degree_dist_p_notwos[1]=0 # remove all housholds of size 1
+  degree_dist_p_notwos[2]=0 # remove all housholds of size 1
+  degree_dist_p_notwos=degree_dist_p_notwos/sum(degree_dist_p_notwos)  # 
+  degseq_notwos=1
+  while(sum(degseq_notwos)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p_notwos)->degseq_notwos # generate sequence 
+  performPercolationAnalysis(degseq_notwos) %>% 
+  mutate(Type = '2+n')->tmp6
+  
+  # g6 <- sample_degseq(degseq_notwos)
+  # MeanDegSq = mean(degree(g6)^2)
+  # nl6= gsize(g6)
+  # removenumber = seq(0,nl6,nl6/100) # generate vector of number of links to remove. 
+  # 
+  # data.frame(removenumber)%>% 
+  #   mutate(d=map(removenumber,~meanmaxClusters(g6,.))) %>% 
+  #   unnest(d) %>% 
+  #   mutate(LinksPerHousehold = (nl6-removenumber)/nl6) %>% 
+  #   mutate(Type='1,2-joins-another') %>% 
+  #   mutate(MeadDegSq = MeanDegSq)->tmp6
+  
+  
+  return(rbind(tmp,tmp2,tmp3,tmp4,tmp5,tmp6))
+
+}
+
+performPercolationAnalysis<-function (degree_sequence){
+  
+  
+  g <- sample_degseq(degree_sequence)
+#  MeanDegSq = mean(degree(g)^2)
+
+  nl= gsize(g) #count number of links
+  removenumber = seq(0,nl,nl/100) # generate vector of number of links to remove. 
+
+  data.frame(removenumber)%>% 
+    mutate(d=map(removenumber,~meanmaxClusters(g,.))) %>% 
+    unnest(d) %>% 
+    mutate(LinksPerHousehold = (nl-removenumber)/nl) %>% 
+    mutate(MeanDegSq)->tmp
+  
+  return(tmp)
+}
+
+find_threshold(degree_dist_p,N)->tmp
+
+
+data.frame (rep = seq(10))%>% 
+  mutate(tmp = map(rep,~find_threshold(degree_dist_p,N)))->tmp2
+```
+
+
+
+
+```{r}
+tmp2 %>% 
+  unnest(cols = c(tmp)) %>% 
+  group_by(Type,removenumber) %>% 
+  summarise(MMax = mean(Max,na.rm = T),`Mean Component Size`=mean(Mean_woMax,na.rm = T),LinksPerHousehold=mean(LinksPerHousehold,na.rm = T)) %>% 
+  mutate(`Giant Component`=MMax/N) %>% 
+  pivot_longer(cols=c(`Giant Component`,`Mean Component Size`))->tmp3
+
+
+tmp3%>%
+#  mutate(proplinks=1/proplinks) %>% 
+  ggplot(aes(x=LinksPerHousehold,y=(value),colour=Type))+
+  geom_line(size=1.5,alpha=0.7)+
+  geom_vline(xintercept = 0.5,linetype="dotted")+
+  annotate("rect", xmin = c(0.6*0.5), 
+           xmax = c(0.9*0.5),
+           ymin = 0, ymax = Inf,
+           alpha = 0.2, 
+           fill = c("blue"))+
+  #geom_vline(xintercept = 0.5*0.7,linetype="dotted",colour='red')+
+#  facet_grid(Type~.,scales = 'free_x')+
+  xlab('Average links per person outside household')+
+  ylab(' ')+
+  labs(color='Bubbling strategy')+
+  facet_grid(name~.,scale='free_y')+
+  theme_minimal_grid()+
+  panel_border()->p
+
+ggsave(p,filename = 'Combined.png',width=8,height=9)
+library(plotly)
+ggplotly(p)
+```
+
+
+
+```{r}
+
+
+tmp2 %>% 
+  unnest(cols = c(tmp)) %>% 
+  group_by(Type,removenumber) %>% 
+  summarise(MMax = mean(Max,na.rm = T),`Mean Component Size`=mean(Mean_woMax,na.rm = T),LinksPerHousehold=mean(LinksPerHousehold,na.rm = T)) %>% 
+  mutate(`Giant Component`=MMax/N)%>% 
+  group_by(Type)%>% 
+  filter(`Mean Component Size`==which.max(`Mean Component Size`))
+
+
+```
+
+
+
+```{r}
+
+
+tmp3%>%
+#  mutate(proplinks=1/proplinks) %>% 
+  ggplot(aes(x=LinksPerHousehold*2,y=(value),colour=Type))+
+  geom_line(size=1.5,alpha=0.7)+
+  geom_vline(xintercept = 0.5,linetype="dotted")+
+  geom_vline(xintercept = 0.35,linetype="dotted",colour='red')+
+#  facet_grid(Type~.,scales = 'free_x')+
+  xlab('Average links per person outside household')+
+  ylab(' ')+
+  labs(color='Bubbling strategy')+
+  facet_grid(name~.,scale='free_y')+
+  theme_minimal_grid()+
+  panel_border()
+  
+
+
+
+
+```
+
+```{r}
+
+
+tmp2 %>% 
+  unnest() %>% 
+  group_by(Type,removenumber) %>% 
+  summarise(MMax = mean(Max,na.rm = T),`Mean Component Size`=mean(Mean_woMax,na.rm = T),LinksPerHousehold=mean(LinksPerHousehold,na.rm = T)) %>% 
+  mutate(`Giant Component`=MMax/N) %>% 
+  mutate(R0Estimate = -log(1-`Giant Component`)/`Giant Component`) %>% 
+  select(Type,LinksPerHousehold,R0Estimate) %>% 
+#  pivot_longer(cols=c(`Giant Component`,`Mean Component Size`,R0Estimate))%>% 
+  pivot_longer(cols=c(R0Estimate))%>% 
+#  mutate(proplinks=1/proplinks) %>% 
+  ggplot(aes(x=LinksPerHousehold,y=value,colour=Type))+
+  geom_line(size=1.5,alpha=0.7)+
+  geom_hline(yintercept = 1,linetype="dotted")+
+#  facet_grid(Type~.,scales = 'free_x')+
+  scale_y_log10()+
+    ylim(0,5)+
+  xlab('Average links per person outside household')+
+  ylab(' ')+
+  labs(color='Bubbling strategy')+
+  facet_grid(name~.,scale='free_y')+
+  theme_minimal_grid()
+
+
+
+
+
+tmp
+```
+
+
+```{r}
+tmp %>% 
+  select(LinksPerHousehold,Max,Mean_woMax,SD,Type) %>% 
+#  mutate(proplinks=1/proplinks) %>% 
+  ggplot(aes(x=LinksPerHousehold,y=Max/N,colour=Type))+
+  geom_line(size=1.5,alpha=0.7)+
+  geom_vline(xintercept = 0.5,linetype="dotted")+
+  xlab('Average links per person outside household')+
+  ylab('Proportion of housholds in the giant component')+
+  labs(color='Bubbling strategy')+
+  theme_minimal_grid()->p
+
+
+
+ggsave(p,filename = 'GiantComponentSize.png',width=7,height=5)
+
+```
+
+
+
+```{r}
+
+tmp %>% 
+  select(LinksPerHousehold,Max,`Mean Component Size`=Mean_woMax,Type)%>% 
+  mutate(`Giant Component`=Max/N) %>% 
+  pivot_longer(cols=c(`Giant Component`,`Mean Component Size`))%>% 
+#  mutate(proplinks=1/proplinks) %>% 
+  ggplot(aes(x=LinksPerHousehold,y=value,colour=Type))+
+  geom_line(size=1.5,alpha=0.7)+
+  geom_vline(xintercept = 0.5,linetype="dotted")+
+#  facet_grid(Type~.,scales = 'free_x')+
+  xlab('Average links per person outside household')+
+  ylab(' ')+
+  labs(color='Bubbling strategy')+
+  facet_grid(name~.,scale='free_y')+
+  theme_minimal_grid()
+
+
+tmp %>% filter(LinksPerHousehold==0.5)
+  
+```
+
+
+```{r}
+
+tmp %>% 
+  select(LinksPerHousehold,Max,Mean_woMax,SD,Type) %>% 
+#  mutate(proplinks=1/proplinks) %>% 
+  ggplot(aes(x=LinksPerHousehold,y=Mean_woMax,colour=Type))+
+    geom_line(size=1.5,alpha=0.7)+
+#  facet_grid(Type~.,scales = 'free_x')+
+  xlab('Average links per person outside household')+
+  ylab('Mean component size')+
+  labs(color='Bubbling strategy')+
+  theme_minimal_grid()->p
+
+ggsave(p,filename = 'OrderParameter.png',width=7,height=5)
+
+
+tmp %>% 
+  group_by(Type) %>% 
+  summarise(24+which.max(Mean_woMax[25:100]))
+  
+
+```
+
+```{r}
+library('tidygraph')
+library('ggraph')
+E(tenK_g)
+tenK_g %>% 
+    ggraph(layout = 'kk')+
+    geom_edge_link() + 
+    geom_node_point(size = 8, colour = 'steelblue') +
+    geom_node_text(aes(label = name), colour = 'white', vjust = 0.4) + 
+    ggtitle('Binding graphs') + 
+    theme_graph()
+
+
+
+```
+
+
+```{r}
+library(ggraph)
+g<-bind_graphs(create_complete(2),create_complete(3),create_complete(5))
+
+g %>% ggraph(layout='kk') +
+  geom_edge_link() + 
+  geom_node_point(size = 8, colour = 'steelblue')
+
+
+play_islands(n_islands = 5, size_islands = c(5), 1, 1) %>% 
+    mutate(community = as.factor(group_infomap())) %>% 
+    ggraph(layout = 'kk') + 
+    geom_edge_link(aes(alpha = ..index..), show.legend = FALSE) + 
+    geom_node_point(aes(colour = community), size = 7) + 
+    theme_graph()
+```
+
+```{r}
+library(ggraph)
+sizes=c(2,3,4,5)
+n=sum(sizes)
+pmatrix=diag(length(sizes))
+
+
+
+
+play_blocks(sum(sizes),p_between=pmatrix+0.03,sizes) %>% 
+   mutate(community = as.factor(group_infomap())) %>% 
+    ggraph(layout = 'kk') + 
+    geom_edge_link(aes(alpha = ..index..), show.legend = FALSE) + 
+    geom_node_point(aes(colour = community), size = 7) + 
+    theme_graph()
+
+ll=data.frame(from =c(1,3,1,4,3,2,2,4),
+              to =  c(3,1,4,1,2,3,4,2))
+
+as_tbl_graph(ll) %>% 
+  ggraph(layout = 'fr') + 
+    geom_edge_link(aes(alpha = ..index..), show.legend = FALSE) + 
+    geom_node_point(aes(colour = name), size = 7) + 
+    theme_graph()
+
+
+```
