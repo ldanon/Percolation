@@ -5,13 +5,17 @@ library(igraph)
 library(tidygraph)
 library(tidyverse)
 library(cowplot)
+library(furrr)
 
 load(file ='HHSizes.Rdata')
-
 
 degree_dist_p = HH_SizeHist_All$Count/sum(HH_SizeHist_All$Count)
 
 sum(HH_SizeHist_All$Count)
+
+AverageHouseholdSize = sum(HH_SizeHist_All$Count/sum(HH_SizeHist_All$Count)*HH_SizeHist_All$Size)
+
+# =2.356
 
 HH_SizeHist_All %>% 
   ggplot(aes(x=Size,y=Count/sum(Count)))+
@@ -22,7 +26,14 @@ HH_SizeHist_All %>%
   xlab('Household Size, S')+
   theme_minimal_grid()->p
 
+
+
+
 ggsave(p,filename='HouseholdSizeDist.png',width=7,height=5)
+
+
+
+
   
 ```
 
@@ -50,16 +61,27 @@ HH_SizeHist_All %>%
 ```
 
 
-
-
 ```{r}
+attackRate = 0.4
+Beta = 0.48
+pc=0.479
+pc=seq(0,1,0.1)
+PC = Beta*pc
+  
+
+```
+
+
+
+
+```{r include = FALSE} 
 library('moments')
 sample(30, 1000, replace = TRUE, degree_dist_p)->oneK
 sample(30, 10000, replace = TRUE, degree_dist_p)->tenK
 sample(30, 100000, replace = TRUE, degree_dist_p)->hundredK
 sample(30, 1000000, replace = TRUE, degree_dist_p)->million
 
-as.tibble(testseq)%>% 
+as.tibble(tenK)%>% 
   group_by(value) %>% 
   summarise(N=n()) # that seems to be working then. 
 
@@ -67,9 +89,9 @@ HH_SizeHist_All %>%
   ggplot()+
   geom_col(data=HH_SizeHist_All, aes(x=Size,y=Count/sum(Count)))
 
-as.tibble(testseq)%>% 
-  ggplot(aes(x=testseq))+
-  geom_histogram(bins=max(testseq))
+as.tibble(tenK)%>% 
+  ggplot(aes(x=tenK))+
+  geom_histogram(bins=max(tenK))
 
 
 
@@ -80,14 +102,22 @@ as.tibble(testseq)%>%
 ```{r}
 
 
-
 N=100000
 degseq=1
-while(sum(degseq)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p)->degseq
 
-nl=sum(degseq)
-g<-sample_degseq(degseq)
-removenumber = seq(0,nl/2,1000)
+# make sure there are an even number of stubbs & generate a degree sequence
+while(sum(degseq)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p)->degseq 
+
+
+nl=sum(degseq)  # number of links
+
+nl/100000 # agrees with distribution above - PHEW
+
+g<-sample_degseq(degseq)  #
+removenumber = seq(0,nl/2,1000)  # sequence of number of edges to remove for percolation analysis
+
+
+# function for performing percolation analysis by removing edges
 
 meanmaxClusters <- function(g,i){
   sub_g<-delete_edges(g,sample(E(g),i)) # remove i edges
@@ -101,7 +131,7 @@ meanmaxClusters <- function(g,i){
 } 
 
 
-data.frame(removenumber)%>% 
+data.frame(removenumber)%>% # iterate percolation function over the sequence of edge removals
   mutate(d=map(removenumber,~meanmaxClusters(g,.))) %>% 
   unnest(d)->tmp
   
@@ -114,7 +144,12 @@ tmp %>%
   facet_wrap(~name,scales = 'free_y')
 
 
-removenumber2 = seq(0,nl,1000)
+```
+
+```{r twobubbles}
+
+
+removenumber2 = seq(0,nl,1000) # this is for two bubbles
 
 g_bubble2=sample_degseq(degseq+rev(degseq))
 
@@ -134,13 +169,28 @@ tmp_bubble2 %>%
 
 
 ```{r}
+
+theoreticalPC = function(degseq){
+  
+  meank = mean(degseq)
+  mean2k = mean(degseq*degseq)
+  
+  theopc = meank/(mean2k-meank)
+  return(theopc)
+}
+
 N=100000
 
+# write wrapper function
+
 find_threshold<-function(degree_dist_p,N){
-  
   # no bubbles
   degseq=1
   while(sum(degseq)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p)->degseq # generate sequence
+  
+  mean(degseq)
+  theoreticalPC(degseq)
+  
   
   performPercolationAnalysis(degseq) %>% 
      mutate(Type='No-bubbles')->tmp
@@ -156,9 +206,16 @@ find_threshold<-function(degree_dist_p,N){
   #   mutate(Type='No-bubbles')->tmp
   
 # join up bubbles of size 2.
+
+  degseq_2bubbles = degseq+rev(degseq)
   
-  performPercolationAnalysis(degseq+rev(degseq)) %>% 
+  mean(degseq_2bubbles)
+  theoreticalPC(degseq_2bubbles)  
+  
+  performPercolationAnalysis(degseq_2bubbles) %>% 
         mutate(Type='2-bubbles')->tmp2
+  
+
   
   # g2 <- sample_degseq(degseq+rev(degseq))
   # nl2= gsize(g2)
@@ -174,9 +231,14 @@ find_threshold<-function(degree_dist_p,N){
   degseq2=1
   while(sum(degseq2)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p)->degseq2 # generate sequence
   
-  performPercolationAnalysis(degseq+rev(degseq)+degseq2) %>% 
+  degseq_3bubbles = degseq+rev(degseq)+degseq2
+  mean(degseq_3bubbles)
+  theoreticalPC(degseq_3bubbles)
+  
+  performPercolationAnalysis(degseq_3bubbles) %>% 
     mutate(Type='3-bubbles')->tmp3
     
+  
   
   # g3 <- sample_degseq(degseq+rev(degseq)+degseq2)
   # nl3= gsize(g3)
@@ -198,6 +260,8 @@ find_threshold<-function(degree_dist_p,N){
   degseq3=1
   while(sum(degseq3)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p_mod)->degseq3 # generate sequence 
   
+  mean(degseq3)
+  theoreticalPC(degseq3)
   performPercolationAnalysis(degseq3) %>% 
     mutate(Type = '1+1')->tmp4
   
@@ -219,6 +283,8 @@ find_threshold<-function(degree_dist_p,N){
   degseq_noones=1
   while(sum(degseq_noones)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p_noones)->degseq_noones # generate sequence
 
+  mean(degseq_noones)
+  theoreticalPC(degseq_noones)
   
   performPercolationAnalysis(degseq_noones) %>% 
     mutate(Type = '1+n')->tmp5
@@ -239,9 +305,15 @@ find_threshold<-function(degree_dist_p,N){
   degree_dist_p_notwos=degree_dist_p # copy the distribution
   degree_dist_p_notwos[1]=0 # remove all housholds of size 1
   degree_dist_p_notwos[2]=0 # remove all housholds of size 1
-  degree_dist_p_notwos=degree_dist_p_notwos/sum(degree_dist_p_notwos)  # 
+  degree_dist_p_notwos=degree_dist_p_notwos/sum(degree_dist_p_notwos)  # renormalise
+  
   degseq_notwos=1
   while(sum(degseq_notwos)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p_notwos)->degseq_notwos # generate sequence 
+  
+  
+  mean(degseq_notwos)
+  theoreticalPC(degseq_notwos)
+  
   performPercolationAnalysis(degseq_notwos) %>% 
   mutate(Type = '2+n')->tmp6
   
@@ -280,26 +352,27 @@ performPercolationAnalysis<-function (degree_sequence){
   return(tmp)
 }
 
-find_threshold(degree_dist_p,N)->tmp
+#find_threshold(degree_dist_p,N)->tmp
 
+plan(multisession,workers=6)
 
-data.frame (rep = seq(10))%>% 
-  mutate(tmp = map(rep,~find_threshold(degree_dist_p,N)))->tmp2
+data.frame (rep = seq(300))%>% 
+  mutate(tmp = future_map(rep,~find_threshold(degree_dist_p,N)))->tmp2
 ```
 
 
 
 
 ```{r}
+
+
 tmp2 %>% 
   unnest(cols = c(tmp)) %>% 
   group_by(Type,removenumber) %>% 
-  summarise(MMax = mean(Max,na.rm = T),`Mean Component Size`=mean(Mean_woMax,na.rm = T),LinksPerHousehold=mean(LinksPerHousehold,na.rm = T)) %>% 
+  summarise(MMax = mean(Max,na.rm = T),
+            `Mean Component Size`=mean(Mean_woMax,na.rm = T),LinksPerHousehold=mean(LinksPerHousehold,na.rm = T)) %>% 
   mutate(`Giant Component`=MMax/N) %>% 
-  pivot_longer(cols=c(`Giant Component`,`Mean Component Size`))->tmp3
-
-
-tmp3%>%
+  pivot_longer(cols=c(`Giant Component`,`Mean Component Size`)) %>% 
 #  mutate(proplinks=1/proplinks) %>% 
   ggplot(aes(x=LinksPerHousehold,y=(value),colour=Type))+
   geom_line(size=1.5,alpha=0.7)+
@@ -316,7 +389,9 @@ tmp3%>%
   labs(color='Bubbling strategy')+
   facet_grid(name~.,scale='free_y')+
   theme_minimal_grid()+
-  panel_border()->p
+  panel_border()
+
+->p
 
 ggsave(p,filename = 'Combined.png',width=8,height=9)
 library(plotly)
@@ -343,17 +418,23 @@ tmp2 %>%
 
 ```{r}
 
-
-tmp3%>%
+tmp2 %>% 
+  unnest(cols = c(tmp)) %>% 
+  group_by(Type,removenumber) %>% 
+  summarise(MMax = mean(Max,na.rm = T),
+            `Mean Component Size`=mean(Mean_woMax,na.rm = T),LinksPerHousehold=mean(LinksPerHousehold,na.rm = T)) %>% 
+  mutate(`Giant Component`=MMax/N) %>% 
+  pivot_longer(cols=c(`Giant Component`,`Mean Component Size`)) %>% 
 #  mutate(proplinks=1/proplinks) %>% 
-  ggplot(aes(x=LinksPerHousehold*2,y=(value),colour=Type))+
+  ggplot(aes(x=LinksPerHousehold,y=(value),colour=Type))+
   geom_line(size=1.5,alpha=0.7)+
-  geom_vline(xintercept = 0.5,linetype="dotted")+
-  geom_vline(xintercept = 0.35,linetype="dotted",colour='red')+
+#  geom_vline(xintercept = 0.5,linetype="dotted")+
+#  geom_vline(xintercept = 0.35,linetype="dotted",colour='red')+
 #  facet_grid(Type~.,scales = 'free_x')+
   xlab('Average links per person outside household')+
   ylab(' ')+
-  labs(color='Bubbling strategy')+
+  xlim(0,0.75)+
+  labs(color='Bubbling scenario')+
   facet_grid(name~.,scale='free_y')+
   theme_minimal_grid()+
   panel_border()
@@ -363,39 +444,6 @@ tmp3%>%
 
 
 ```
-
-```{r}
-
-
-tmp2 %>% 
-  unnest() %>% 
-  group_by(Type,removenumber) %>% 
-  summarise(MMax = mean(Max,na.rm = T),`Mean Component Size`=mean(Mean_woMax,na.rm = T),LinksPerHousehold=mean(LinksPerHousehold,na.rm = T)) %>% 
-  mutate(`Giant Component`=MMax/N) %>% 
-  mutate(R0Estimate = -log(1-`Giant Component`)/`Giant Component`) %>% 
-  select(Type,LinksPerHousehold,R0Estimate) %>% 
-#  pivot_longer(cols=c(`Giant Component`,`Mean Component Size`,R0Estimate))%>% 
-  pivot_longer(cols=c(R0Estimate))%>% 
-#  mutate(proplinks=1/proplinks) %>% 
-  ggplot(aes(x=LinksPerHousehold,y=value,colour=Type))+
-  geom_line(size=1.5,alpha=0.7)+
-  geom_hline(yintercept = 1,linetype="dotted")+
-#  facet_grid(Type~.,scales = 'free_x')+
-  scale_y_log10()+
-    ylim(0,5)+
-  xlab('Average links per person outside household')+
-  ylab(' ')+
-  labs(color='Bubbling strategy')+
-  facet_grid(name~.,scale='free_y')+
-  theme_minimal_grid()
-
-
-
-
-
-tmp
-```
-
 
 ```{r}
 tmp %>% 
@@ -498,7 +546,7 @@ play_islands(n_islands = 5, size_islands = c(5), 1, 1) %>%
 ```
 
 ```{r}
-library(ggraph)
+
 sizes=c(2,3,4,5)
 n=sum(sizes)
 pmatrix=diag(length(sizes))
@@ -524,3 +572,458 @@ as_tbl_graph(ll) %>%
 
 
 ```
+
+
+
+
+```{r generate degree sequence}
+
+
+prop_def_bubbling = 0.33 # 33% definitely forming a bubble, 8% probably will
+prop_def_bubbling = 0.33+0.08+0.09  # 9% don't know
+prop_probably_bubbling = 0.08
+prop_def_not_bubbling = 0.25   # 25% definitely not forming a bubble, 13% probably wont. 
+prop_probably_not_bubbling = 0.13
+
+bubblesizes=c(0.35, 0.31, 0.09, 0.03, 0.01,0.01) #21% don't know - assume they follow a similar distribution
+
+bubblesizes = bubblesizes/sum(bubblesizes)
+
+prop_bubbling = c(1-prop_def_bubbling,prop_def_bubbling*bubblesizes)
+
+sum(prop_bubbling)
+
+generatedegseq<-function(degree_dist_p,N,prop_bubbling){
+  
+    degseq=1
+    while(sum(degseq)%%2!=0){
+      
+      if(prop_bubbling[1]>0){
+      # generate a vector of household sizes from HH distribution
+        sample(30, round(N*prop_bubbling[1]), replace = TRUE, degree_dist_p)->degseq1 #sample with replacement 
+      }
+    
+      if(prop_bubbling[2]>0){
+      # generate a smaller vector of 2 bubbles
+        sample(30, round(N*prop_bubbling[2]/2), replace = TRUE, degree_dist_p)->degseq_2_tmp 
+        degseq2 = degseq_2_tmp + rev(degseq_2_tmp)# now make a vector of the right size of the right characteristics
+      }
+    
+      if(prop_bubbling[3]>0){
+      # generate a vector of 3 bubbles    
+        sample(30, round(N*prop_bubbling[3]/3), replace = TRUE, degree_dist_p)->degseq_3_tmp
+        sample(30, round(N*prop_bubbling[3]/3), replace = TRUE, degree_dist_p)->degseq_3_tmp2
+        degseq3 = degseq_3_tmp + rev(degseq_3_tmp) + degseq_3_tmp2
+      }
+      if(prop_bubbling[4]>0){
+      # generate a vector of 4 bubbles    
+        sample(30, round(N*prop_bubbling[4]/4), replace = TRUE, degree_dist_p)->degseq_4_tmp
+        sample(30, round(N*prop_bubbling[4]/4), replace = TRUE, degree_dist_p)->degseq_4_tmp2
+        degseq4 = degseq_4_tmp + rev(degseq_4_tmp) + degseq_4_tmp2 + rev(degseq_4_tmp2)
+      }
+      
+      if(prop_bubbling[5]>0){
+      # generate a vector of 5 bubbles    
+        sample(30, round(N*prop_bubbling[5]/5), replace = TRUE, degree_dist_p)->degseq_5_tmp
+        sample(30, round(N*prop_bubbling[5]/5), replace = TRUE, degree_dist_p)->degseq_5_tmp2
+        sample(30, round(N*prop_bubbling[5]/5), replace = TRUE, degree_dist_p)->degseq_5_tmp3
+        degseq5 = degseq_5_tmp + rev(degseq_5_tmp) + degseq_5_tmp2 + rev(degseq_5_tmp2) + degseq_5_tmp3
+      }
+    
+      degseq=c(degseq1,degseq2,degseq3,degseq4,degseq5)
+    }
+return(degseq)
+}
+
+#degseq+rev(degseq)+degseq2
+
+
+#while(sum(degseq_noones)%%2!=0)sample(30, N, replace = TRUE, 
+ #                                     degree_dist_p_noones)->degseq_noones # generate sequence
+
+#while(sum(degseq)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p)->degseq 
+
+```
+
+```{r}
+
+get_bubble_result<-function(degree_dist_p,N){
+  #proportion of respondents who said they'd bubble by bubble size: 2,3,4,5,6,7+
+  bubblesizes=c(0.35, 0.31, 0.09, 0.03, 0.01,0.01) #21% don't know - assume they follow a similar distribution
+  bubblesizes = bubblesizes/sum(bubblesizes)
+  
+  #best case: only those that said they'd DEFINITELY bubble actually do
+  prop_def_bubbling = 0.33 # 33% definitely forming a bubble, 8% probably will
+  prop_bubbling = c(1-prop_def_bubbling,prop_def_bubbling*bubblesizes)
+  bestcase=generatedegseq(degree_dist_p,N,prop_bubbling)
+  
+  mean(bestcase)
+  theoreticalPC(bestcase)
+  
+  performPercolationAnalysis(bestcase) %>% mutate(Type = 'BestCase') -> bestcase_results
+  
+  
+  
+  #reasonable case: definitely and probably bubble
+  prop_def_bubbling = 0.33+0.08 + 0.09*(0.08+0.33)
+  #prop_def_bubbling = prop_def_bubbling*1.09 #assume 33%+8%=41% of the don't knows (9%) decide to bubble
+  prop_bubbling = c(1-prop_def_bubbling,prop_def_bubbling*bubblesizes)
+  reasonablecase=generatedegseq(degree_dist_p,N,prop_bubbling)
+  mean(reasonablecase)
+  theoreticalPC(reasonablecase)
+  
+  performPercolationAnalysis(reasonablecase) %>% mutate(Type = 'ReasonableCase') -> reasonablecase_results
+  
+  #worst case
+  prop_def_bubbling = 1-0.25 #1 minus the prop definitely NOT bubbling
+  prop_bubbling = c(1-prop_def_bubbling,prop_def_bubbling*bubblesizes)
+  worstcase=generatedegseq(degree_dist_p,N,prop_bubbling)
+  mean(worstcase)
+  theoreticalPC(worstcase)
+  performPercolationAnalysis(worstcase) %>% mutate(Type = 'WorstCase') -> worstcase_results
+  
+  #impact of big bubbles
+  # proportion of respondents who said they'd bubble by bubble size: 2,3,4,5,6,7+
+  
+  bubblesizes2=c(0.35, 0.31, 1e-10, 1e-10, 1e-10,1e-10) #21% don't know - assume they follow a similar distribution
+  bubblesizes2 = bubblesizes2/sum(bubblesizes2)
+  prop_def_bubbling = 0.33+0.08 + 0.09*(0.08+0.33)
+  # prop_def_bubbling = prop_def_bubbling*1.09 #assume 33%+8%=41% of the don't knows (9%) decide to bubble
+  prop_bubbling = c(1-prop_def_bubbling,prop_def_bubbling*bubblesizes2)
+  nolargebubbles=generatedegseq(degree_dist_p,N,prop_bubbling)
+  
+  #performPercolationAnalysis(nolargebubbles) %>% mutate(Type = 'Max3') -> nolargebubbles_results--commented out for speed
+  
+  
+  #results = rbind(bestcase_results,reasonablecase_results,worstcase_results,nolargebubbles_results)
+  
+  results = rbind(bestcase_results,reasonablecase_results,worstcase_results)
+  
+  return(results)
+}
+
+data.frame (rep = seq(300))%>% 
+  mutate(tmp = future_map(rep,~get_bubble_result(degree_dist_p,N)))->results_reps2
+```
+
+```{r include = FALSE}
+# Testing plotting 
+
+results %>% 
+  select(LinksPerHousehold,Max,Mean_woMax,SD,Type)%>% 
+#  mutate(proplinks=1/proplinks) %>% 
+  ggplot(aes(x=LinksPerHousehold,y=Mean_woMax,,colour = Type))+
+    geom_line(size=1.5,alpha=0.7)+
+#  facet_grid(Type~.,scales = 'free_x')+
+  xlab('Average links per person outside household')+
+  ylab('Mean component size')+
+  labs(color='Bubbling scenario')+
+    annotate("rect", xmin = c(0.6*0.5), 
+           xmax = c(0.9*0.5),
+           ymin = 0, ymax = Inf,
+           alpha = 0.2, 
+           fill = c("blue"))+
+  theme_minimal_grid()+
+  xlim(0.0,0.8)+
+  ylim(1,2.5)->p
+
+library(plotly)
+ggplotly(p)
+```
+
+
+
+
+```{r}
+  
+library(patchwork)
+
+results_reps = results_reps2
+
+results_reps %>% 
+  unnest(cols = c(tmp)) %>% 
+  #filter(LinksPerHousehold<0.75) %>% 
+  ggplot(aes(x = LinksPerHousehold,
+             y = Mean_woMax,
+             group = interaction(Type,rep),
+             colour = Type))+
+  geom_line(alpha = 0.2)+
+    theme_minimal_grid()+
+    theme(legend.position = '')+
+  xlim(0.0,0.8)+
+  ylim(1,2.5)+  
+  xlab('Average links per person outside household')+
+  ylab('Mean component size')-> op
+
+
+results_reps %>% 
+  unnest(cols = c(tmp)) %>% 
+  group_by(Type,rep) %>% 
+  mutate(Giant = Max/max(Max)) %>% 
+#  filter(LinksPerHousehold<0.75) %>% 
+  ggplot(aes(x = LinksPerHousehold,
+             y = Giant,
+             group = interaction(Type,rep),
+             colour = Type))+
+  geom_line(alpha = 0.2)+
+  theme_minimal_grid()+
+  theme(legend.position = '')+
+  xlim(0.0,0.8)+
+  #ylim(1,2.5)+  
+  xlab('')+
+  ylab('Giant component size')-> g
+
+
+
+results_reps %>% 
+  unnest(cols = c(tmp)) %>% 
+  filter(LinksPerHousehold<0.75) %>% 
+  group_by(rep,Type) %>% 
+  filter(Mean_woMax == max(Mean_woMax,na.rm=T)) %>% 
+  arrange(Type,rep) %>% 
+  ungroup() %>% 
+  ggplot(aes(x=Type,y=LinksPerHousehold,fill=Type,colour = Type))+
+  geom_violin(adjust = 3)+
+  ylab('Percolation threshold')+
+  theme_minimal_grid()+
+  theme(legend.title = element_blank(),
+        axis.text.x = element_text(angle = -30))+
+  xlab('')-> s
+  
+
+
+results_reps %>% 
+  unnest(cols = c(tmp)) %>% 
+  filter(LinksPerHousehold<0.75) %>% 
+  group_by(rep,Type) %>% 
+  filter(Mean_woMax == max(Mean_woMax,na.rm=T)) %>% 
+  arrange(Type,rep) %>% 
+  ungroup() %>% 
+  group_by(Type) %>%
+  summarise(MeanThreshold = mean(LinksPerHousehold),
+            Upper = quantile(LinksPerHousehold,0.975),
+            Lower = quantile(LinksPerHousehold,0.025))
+
+
+(g / op) |  s ->f
+
+f+plot_annotation(tag_levels = 'A') &
+  theme(plot.tag = element_text(size = 18))->f
+
+ggsave(f,filename = 'XmasBubbles.png',width=9,height=7)
+```
+
+```{r}
+# Original bubbles re-draw figure
+
+tmp2 %>% 
+  unnest(cols = c(tmp)) %>% 
+  #filter(LinksPerHousehold<0.75) %>% 
+  ggplot(aes(x = LinksPerHousehold,
+             y = Mean_woMax,
+             group = interaction(Type,rep),
+             colour = Type))+
+  geom_line(alpha = 0.2)+
+    theme_minimal_grid()+
+    theme(legend.position = '')+
+  xlim(0.0,0.8)+
+  ylim(1,3)+  
+  xlab('Average links per person outside household')+
+  ylab('Mean component size')-> op_orig
+
+
+tmp2 %>% 
+  unnest(cols = c(tmp)) %>% 
+  group_by(Type,rep) %>% 
+  mutate(Giant = Max/max(Max)) %>% 
+#  filter(LinksPerHousehold<0.75) %>% 
+  ggplot(aes(x = LinksPerHousehold,
+             y = Giant,
+             group = interaction(Type,rep),
+             colour = Type))+
+  geom_line(alpha = 0.2)+
+  theme_minimal_grid()+
+  theme(legend.position = '')+
+  xlim(0.0,0.8)+
+  #ylim(1,2.5)+  
+  xlab('')+
+  ylab('Giant component size')-> g_orig
+
+
+
+tmp2 %>% 
+  unnest(cols = c(tmp)) %>% 
+  filter(LinksPerHousehold<0.75) %>% 
+  group_by(rep,Type) %>% 
+  filter(Mean_woMax == max(Mean_woMax,na.rm=T)) %>% 
+  arrange(Type,rep) %>% 
+  ungroup() %>% 
+  ggplot(aes(x= reorder(Type, 
+                        -LinksPerHousehold, 
+                        FUN = median),
+             y=LinksPerHousehold,
+             fill=Type,colour = Type))+
+  geom_boxplot()+
+#  geom_violin(adjust = 3)+
+  ylab('Percolation threshold')+
+  theme_minimal_grid()+
+  theme(legend.title = element_blank(),
+        axis.text.x = element_text(angle = -90))+
+  xlab('')-> s_orig
+
+
+#results_reps %>% 
+#  unnest(cols = c(tmp)) %>% 
+#  filter(LinksPerHousehold<0.75) %>% 
+#  group_by(rep,Type) %>% 
+#  filter(Mean_woMax == max(Mean_woMax,na.rm=T)) %>% 
+#  arrange(Type,rep) %>% 
+#  ungroup() %>% 
+#  group_by(Type) %>%
+#  summarise(MeanThreshold = mean(LinksPerHousehold),
+#            Upper = quantile(LinksPerHousehold,0.975),
+#            Lower = quantile(LinksPerHousehold,0.025))
+
+
+(g_orig / op_orig) |  s_orig ->f_orig
+
+f_orig+plot_annotation(tag_levels = 'A') &
+  theme(plot.tag = element_text(size = 18))->f_orig
+
+ggsave(f_orig,filename = 'OriginalBubbles.png',width=9,height=7)
+
+```
+
+```{r}
+tmp2 %>% 
+  unnest(cols = c(tmp)) %>% 
+  filter(LinksPerHousehold<0.75) %>% 
+  group_by(rep,Type) %>% 
+  filter(Mean_woMax == max(Mean_woMax,na.rm=T)) %>% 
+  arrange(Type,rep) %>% 
+  ungroup()->perc_thresh_orig
+
+results_reps %>% 
+  unnest(cols = c(tmp)) %>% 
+  filter(LinksPerHousehold<0.75) %>% 
+  group_by(rep,Type) %>% 
+  filter(Mean_woMax == max(Mean_woMax,na.rm=T)) %>% 
+  arrange(Type,rep) %>% 
+  ungroup() -> perc_thresh_xmas
+
+rbind(perc_thresh_orig,perc_thresh_xmas)%>% 
+  ggplot(aes(x= reorder(Type, 
+                        -LinksPerHousehold, 
+                        FUN = median),
+             y=LinksPerHousehold,
+             fill=Type,colour = Type))+
+  geom_boxplot()+
+#  geom_violin(adjust = 3)+
+  ylab('Percolation threshold')+
+  theme_minimal_grid()+
+  theme(legend.position = '',
+        axis.text.x = element_text(angle = -90))+
+  xlab('')+
+  ylim(0.03,0.55)->alltogethernow
+
+ggsave(alltogethernow,filename='AllBubblesThresholds.png',width=6,height=4)
+
+
+```
+
+```{r}
+library(ggraph)
+N=200
+p=0.3
+
+plotgraph<-function(degseq,p){
+  g <- sample_degseq(bestcase)
+  g<-igraph::simplify(g,remove.loops=TRUE)
+  coords <- layout_(g, with_fr())
+  nl= gsize(g) #count number of links
+  
+#  colbar <- rainbow(max(comps)+1)
+
+  colbar = rep("white",max(comps)+1)
+  colbar[2] = "red"
+  
+  removenumberlow = round((1-p-0.1)*nl) # number of links to remove. 
+  removenumber = round((1-p)*nl)
+  removenumberhigh = round((1-p+0.1)*nl)
+  
+  sub_g_low<-delete_edges(g,sample(E(g),removenumberlow))
+  LC = which.max(components(sub_g_low)$csize)
+  V(sub_g_low)$color <- "white"
+  V(sub_g_low)$color[components(sub_g_low)$membership==LC] <- "red"
+  
+  sub_g<-delete_edges(sub_g_low,sample(E(sub_g_low),removenumber - removenumberlow))
+  LC = which.max(components(sub_g)$csize)
+  V(sub_g)$color <- "white"
+  V(sub_g)$color[components(sub_g)$membership==LC] <- "red"
+  
+
+  sub_g_high<-delete_edges(sub_g,sample(E(sub_g),removenumberhigh-removenumber))
+  LC = which.max(components(sub_g_high)$csize)
+  V(sub_g_high)$color <- "white"
+  V(sub_g_high)$color[components(sub_g_high)$membership==LC] <- "red"
+
+  par(mfrow = c(1,3),mar = c(1,1,1,1))
+  plot(sub_g_high, layout=coords, vertex.size=6, vertex.label=NA)
+      mtext('Best Case',side=1,line=-7)
+  #     mtext(expression(p<p[c]),side=1,line=-7)
+      plot(sub_g, layout=coords, vertex.size=6, vertex.label=NA)
+      mtext('Reasonable Case',side=1,line=-7)
+      #      mtext(expression(p==p[c]),side=1,line=-7)
+      plot(sub_g_low, layout=coords, vertex.size=6, vertex.label=NA)
+#      mtext(expression(p>p[c]),side=1,line=-7)
+      mtext('Worst Case',side=1,line=-7)
+  }
+
+#proportion of respondents who said they'd bubble by bubble size: 2,3,4,5,6,7+
+bubblesizes=c(0.35, 0.31, 0.09, 0.03, 0.01,0.01) #21% don't know - assume they follow a similar distribution
+bubblesizes = bubblesizes/sum(bubblesizes)
+
+#best case: only those that said they'd DEFINITELY bubble actually do
+prop_def_bubbling = 0.33 # 33% definitely forming a bubble, 8% probably will
+prop_bubbling = c(1-prop_def_bubbling,prop_def_bubbling*bubblesizes)
+bestcase=generatedegseq(degree_dist_p,N,prop_bubbling)
+
+
+plotgraph(bestcase,0.3)
+
+```
+
+```{r}
+#reasonable case: definitely and probably bubble
+prop_def_bubbling = 0.33+0.08 + 0.09*(0.08+0.33)
+#prop_def_bubbling = prop_def_bubbling*1.09 #assume 33%+8%=41% of the don't knows (9%) decide to bubble
+prop_bubbling = c(1-prop_def_bubbling,prop_def_bubbling*bubblesizes)
+reasonablecase=generatedegseq(degree_dist_p,N,prop_bubbling)
+
+plotgraph(reasonablecase,p)
+```
+
+
+
+```{r}
+#worst case
+prop_def_bubbling = 1-0.25 #1 minus the prop definitely NOT bubbling
+prop_bubbling = c(1-prop_def_bubbling,prop_def_bubbling*bubblesizes)
+worstcase=generatedegseq(degree_dist_p,N,prop_bubbling)
+
+plotgraph(worstcase,p)
+
+```
+
+```{r}
+#impact of big bubbles
+#proportion of respondents who said they'd bubble by bubble size: 2,3,4,5,6,7+
+bubblesizes2=c(0.35, 0.31, 1e-10, 1e-10, 1e-10,1e-10) #21% don't know - assume they follow a similar distribution
+bubblesizes2 = bubblesizes2/sum(bubblesizes2)
+prop_def_bubbling = 0.33+0.08 + 0.09*(0.08+0.33)
+#prop_def_bubbling = prop_def_bubbling*1.09 #assume 33%+8%=41% of the don't knows (9%) decide to bubble
+prop_bubbling = c(1-prop_def_bubbling,prop_def_bubbling*bubblesizes2)
+nolargebubbles=generatedegseq(degree_dist_p,N,prop_bubbling)
+plotgraph(nolargebubbles,p)
+```
+
