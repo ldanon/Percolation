@@ -6,6 +6,7 @@ library(tidygraph)
 library(tidyverse)
 library(cowplot)
 library(furrr)
+library(flextable)
 
 load(file ='HHSizes.Rdata')
 
@@ -32,9 +33,10 @@ HH_SizeHist_All %>%
 ggsave(p,filename='HouseholdSizeDist.png',width=7,height=5)
 
 
+HH_SizeHist_All %>% 
+  filter(Size<11) %>% 
+  flextable()
 
-
-  
 ```
 
 ```{r}
@@ -184,28 +186,18 @@ N=100000
 # write wrapper function
 
 find_threshold<-function(degree_dist_p,N){
-  # no bubbles
+  
+  # === no bubbles
   degseq=1
   while(sum(degseq)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p)->degseq # generate sequence
   
   mean(degseq)
   theoreticalPC(degseq)
   
-  
   performPercolationAnalysis(degseq) %>% 
      mutate(Type='No-bubbles')->tmp
   
-  # g<-sample_degseq(degseq) #make network with sequence
-  # nl=gsize(g) # number of links
-  # removenumber = seq(0,nl,nl/100) # generate vector of number of links to remove. 
-  # #print(removenumber) # these are the numbers to remove. 
-  # data.frame(removenumber)%>% 
-  #   mutate(d=map(removenumber,~meanmaxClusters(g,.))) %>% 
-  #   unnest(d) %>% 
-  #   mutate(LinksPerHousehold = (nl-removenumber)/nl) %>% 
-  #   mutate(Type='No-bubbles')->tmp
-  
-# join up bubbles of size 2.
+ # ===  join up bubbles of size 2.
 
   degseq_2bubbles = degseq+rev(degseq)
   
@@ -216,18 +208,8 @@ find_threshold<-function(degree_dist_p,N){
         mutate(Type='2-bubbles')->tmp2
   
 
+  # === join up bubbles of size 3  
   
-  # g2 <- sample_degseq(degseq+rev(degseq))
-  # nl2= gsize(g2)
-  # removenumber = seq(0,nl2,nl2/100) # generate vector of number of links to remove. 
-  # 
-  # data.frame(removenumber)%>% 
-  #   mutate(d=map(removenumber,~meanmaxClusters(g2,.))) %>% 
-  #   unnest(d) %>% 
-  #   mutate(LinksPerHousehold = (nl2-removenumber)/nl2) %>% 
-  #   mutate(Type='2-bubbles')->tmp2
-  
-# join up bubbles of size 3  
   degseq2=1
   while(sum(degseq2)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p)->degseq2 # generate sequence
   
@@ -239,18 +221,7 @@ find_threshold<-function(degree_dist_p,N){
     mutate(Type='3-bubbles')->tmp3
     
   
-  
-  # g3 <- sample_degseq(degseq+rev(degseq)+degseq2)
-  # nl3= gsize(g3)
-  # removenumber = seq(0,nl3,nl3/100) # generate vector of number of links to remove. 
-  # 
-  # data.frame(removenumber)%>% 
-  #   mutate(d=map(removenumber,~meanmaxClusters(g3,.))) %>% 
-  #   unnest(d) %>% 
-  #   mutate(LinksPerHousehold = (nl3-removenumber)/nl3) %>% 
-  #   mutate(Type='3-bubbles')->tmp3
-  
-# 1-add-1 (2 become 1)
+  # ===  1-add-1 (2 become 1)
    
   degree_dist_p_mod=degree_dist_p # copy the distribution
   degree_dist_p_mod[2]=degree_dist_p_mod[2]+degree_dist_p_mod[1]/2 # move all hh of size 1 to hh of size 2
@@ -259,24 +230,15 @@ find_threshold<-function(degree_dist_p,N){
   
   degseq3=1
   while(sum(degseq3)%%2!=0)sample(30, N, replace = TRUE, degree_dist_p_mod)->degseq3 # generate sequence 
+  degseq2become1=degseq3
+  mean(degseq2become1)
+  theoreticalPC(degseq2become1)
   
-  mean(degseq3)
-  theoreticalPC(degseq3)
-  performPercolationAnalysis(degseq3) %>% 
+  performPercolationAnalysis(degseq2become1) %>% 
     mutate(Type = '1+1')->tmp4
   
-  # g4 <- sample_degseq(degseq3)
-  # nl4 = gsize(g4)
-  # removenumber = seq(0,nl4,nl4/100) # generate vector of number of links to remove. 
-  # 
-  # data.frame(removenumber)%>% 
-  #   mutate(d=map(removenumber,~meanmaxClusters(g4,.))) %>% 
-  #   unnest(d) %>% 
-  #   mutate(LinksPerHousehold = (nl4-removenumber)/nl4) %>% 
-  #   mutate(Type='2-become-1')->tmp4
-
   
-# 1 joins another
+  # ===  1 joins another
   degree_dist_p_noones=degree_dist_p # copy the distribution
   degree_dist_p_noones[1]=0 # remove all housholds of size 1
   degree_dist_p_noones=degree_dist_p_noones/sum(degree_dist_p_noones)  #renormalise distribution
@@ -289,19 +251,10 @@ find_threshold<-function(degree_dist_p,N){
   performPercolationAnalysis(degseq_noones) %>% 
     mutate(Type = '1+n')->tmp5
 
-  # g5 <- sample_degseq(degseq_noones)
-  # 
-  # nl5= gsize(g5)
-  # removenumber = seq(0,nl5,nl5/100) # generate vector of number of links to remove. 
-  # 
-  # data.frame(removenumber)%>% 
-  #   mutate(d=map(removenumber,~meanmaxClusters(g5,.))) %>% 
-  #   unnest(d) %>% 
-  #   mutate(LinksPerHousehold = (nl5-removenumber)/nl5) %>% 
-  #   mutate(Type='1-joins-another')->tmp5
+  
   
 
-  # 1+2s join another
+   # ===  1+2s join another
   degree_dist_p_notwos=degree_dist_p # copy the distribution
   degree_dist_p_notwos[1]=0 # remove all housholds of size 1
   degree_dist_p_notwos[2]=0 # remove all housholds of size 1
@@ -315,20 +268,11 @@ find_threshold<-function(degree_dist_p,N){
   theoreticalPC(degseq_notwos)
   
   performPercolationAnalysis(degseq_notwos) %>% 
-  mutate(Type = '2+n')->tmp6
+    mutate(Type = '2+n')->tmp6
   
-  # g6 <- sample_degseq(degseq_notwos)
-  # MeanDegSq = mean(degree(g6)^2)
-  # nl6= gsize(g6)
-  # removenumber = seq(0,nl6,nl6/100) # generate vector of number of links to remove. 
-  # 
-  # data.frame(removenumber)%>% 
-  #   mutate(d=map(removenumber,~meanmaxClusters(g6,.))) %>% 
-  #   unnest(d) %>% 
-  #   mutate(LinksPerHousehold = (nl6-removenumber)/nl6) %>% 
-  #   mutate(Type='1,2-joins-another') %>% 
-  #   mutate(MeadDegSq = MeanDegSq)->tmp6
   
+  
+#  save(file = 'DegreeDistribs.Rdata',list = c('degseq','degseq_2bubbles','degseq_3bubbles','degseq2become1','degseq_noones','degseq_notwos'))
   
   return(rbind(tmp,tmp2,tmp3,tmp4,tmp5,tmp6))
 
@@ -352,7 +296,7 @@ performPercolationAnalysis<-function (degree_sequence){
   return(tmp)
 }
 
-#find_threshold(degree_dist_p,N)->tmp
+find_threshold(degree_dist_p,N)->tmp
 
 plan(multisession,workers=6)
 
@@ -389,9 +333,7 @@ tmp2 %>%
   labs(color='Bubbling strategy')+
   facet_grid(name~.,scale='free_y')+
   theme_minimal_grid()+
-  panel_border()
-
-->p
+  panel_border()->p
 
 ggsave(p,filename = 'Combined.png',width=8,height=9)
 library(plotly)
@@ -696,7 +638,7 @@ get_bubble_result<-function(degree_dist_p,N){
   
   
   #results = rbind(bestcase_results,reasonablecase_results,worstcase_results,nolargebubbles_results)
-  
+#  save(file = 'DegreeDistribsXmas.Rdata',list = c('bestcase','reasonablecase','worstcase'))
   results = rbind(bestcase_results,reasonablecase_results,worstcase_results)
   
   return(results)
