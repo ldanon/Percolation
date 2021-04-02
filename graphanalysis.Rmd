@@ -880,9 +880,9 @@ ggsave(alltogethernow,filename='AllBubblesThresholds.png',width=6,height=4)
 load("DegreeDistribs.Rdata")
 load("DegreeDistribsXmas.Rdata")
 
-
+# From Lopez Barnal 2020 https://doi.org/10.1101/2020.08.19.20177188
 HH1=c(2,3,4,5)
-Smean=c(0.49,0.41,0.32,0.25)
+Smean=c(0.49,0.41,0.32,0.25) 
 Slo=c(0.37,0.29,0.22,0.14)#95% CI
 Shi=c(0.6,0.52,0.42,0.36)
 #legend('topleft',c("no bubbles","2-bubbles",'3-bubbles','1+n',"BPC","RPC","WPC"),col=mycols[c(1,2,3,5,7,8,9)],pch=15,pt.cex=1.5,cex=1.2)
@@ -942,107 +942,5 @@ allmodelout %>%
   summarise(HouseholdR=mean(secondarycases),CI25=quantile(secondarycases,prob=0.25),CI75=quantile(secondarycases,prob=0.75))
 
 
-
-
-
-
-
-```
-
-
-```{r}
-library(ggraph)
-N=200
-p=0.3
-
-plotgraph<-function(degseq,p){
-  g <- sample_degseq(bestcase)
-  g<-igraph::simplify(g,remove.loops=TRUE)
-  coords <- layout_(g, with_fr())
-  nl= gsize(g) #count number of links
-  
-#  colbar <- rainbow(max(comps)+1)
-
-  colbar = rep("white",max(comps)+1)
-  colbar[2] = "red"
-  
-  removenumberlow = round((1-p-0.1)*nl) # number of links to remove. 
-  removenumber = round((1-p)*nl)
-  removenumberhigh = round((1-p+0.1)*nl)
-  
-  sub_g_low<-delete_edges(g,sample(E(g),removenumberlow))
-  LC = which.max(components(sub_g_low)$csize)
-  V(sub_g_low)$color <- "white"
-  V(sub_g_low)$color[components(sub_g_low)$membership==LC] <- "red"
-  
-  sub_g<-delete_edges(sub_g_low,sample(E(sub_g_low),removenumber - removenumberlow))
-  LC = which.max(components(sub_g)$csize)
-  V(sub_g)$color <- "white"
-  V(sub_g)$color[components(sub_g)$membership==LC] <- "red"
-  
-
-  sub_g_high<-delete_edges(sub_g,sample(E(sub_g),removenumberhigh-removenumber))
-  LC = which.max(components(sub_g_high)$csize)
-  V(sub_g_high)$color <- "white"
-  V(sub_g_high)$color[components(sub_g_high)$membership==LC] <- "red"
-
-  par(mfrow = c(1,3),mar = c(1,1,1,1))
-  plot(sub_g_high, layout=coords, vertex.size=6, vertex.label=NA)
-      mtext('Best Case',side=1,line=-7)
-  #     mtext(expression(p<p[c]),side=1,line=-7)
-      plot(sub_g, layout=coords, vertex.size=6, vertex.label=NA)
-      mtext('Reasonable Case',side=1,line=-7)
-      #      mtext(expression(p==p[c]),side=1,line=-7)
-      plot(sub_g_low, layout=coords, vertex.size=6, vertex.label=NA)
-#      mtext(expression(p>p[c]),side=1,line=-7)
-      mtext('Worst Case',side=1,line=-7)
-  }
-
-#proportion of respondents who said they'd bubble by bubble size: 2,3,4,5,6,7+
-bubblesizes=c(0.35, 0.31, 0.09, 0.03, 0.01,0.01) #21% don't know - assume they follow a similar distribution
-bubblesizes = bubblesizes/sum(bubblesizes)
-
-#best case: only those that said they'd DEFINITELY bubble actually do
-prop_def_bubbling = 0.33 # 33% definitely forming a bubble, 8% probably will
-prop_bubbling = c(1-prop_def_bubbling,prop_def_bubbling*bubblesizes)
-bestcase=generatedegseq(degree_dist_p,N,prop_bubbling)
-
-
-plotgraph(bestcase,0.3)
-
-```
-
-```{r}
-#reasonable case: definitely and probably bubble
-prop_def_bubbling = 0.33+0.08 + 0.09*(0.08+0.33)
-#prop_def_bubbling = prop_def_bubbling*1.09 #assume 33%+8%=41% of the don't knows (9%) decide to bubble
-prop_bubbling = c(1-prop_def_bubbling,prop_def_bubbling*bubblesizes)
-reasonablecase=generatedegseq(degree_dist_p,N,prop_bubbling)
-
-plotgraph(reasonablecase,p)
-```
-
-
-
-```{r}
-#worst case
-prop_def_bubbling = 1-0.25 #1 minus the prop definitely NOT bubbling
-prop_bubbling = c(1-prop_def_bubbling,prop_def_bubbling*bubblesizes)
-worstcase=generatedegseq(degree_dist_p,N,prop_bubbling)
-
-plotgraph(worstcase,p)
-
-```
-
-```{r}
-#impact of big bubbles
-#proportion of respondents who said they'd bubble by bubble size: 2,3,4,5,6,7+
-bubblesizes2=c(0.35, 0.31, 1e-10, 1e-10, 1e-10,1e-10) #21% don't know - assume they follow a similar distribution
-bubblesizes2 = bubblesizes2/sum(bubblesizes2)
-prop_def_bubbling = 0.33+0.08 + 0.09*(0.08+0.33)
-#prop_def_bubbling = prop_def_bubbling*1.09 #assume 33%+8%=41% of the don't knows (9%) decide to bubble
-prop_bubbling = c(1-prop_def_bubbling,prop_def_bubbling*bubblesizes2)
-nolargebubbles=generatedegseq(degree_dist_p,N,prop_bubbling)
-plotgraph(nolargebubbles,p)
 ```
 
